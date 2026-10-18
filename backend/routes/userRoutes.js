@@ -85,7 +85,7 @@ router.put('/profile/password',jwtAuthMiddleware,async (req,res) => {
      }
     
      const user = await User.findById(userId);
-     if (!user || !(user.comparePassword(currentPassword))) {
+     if (!user || !(await user.comparePassword(currentPassword))) {
         return res.status(401).json({error : ' INvalid current Password'});
      }
 

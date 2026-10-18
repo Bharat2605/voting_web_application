@@ -44,14 +44,16 @@ router.post('/', jwtAuthMiddleware, async (req, res) => {
 });
 
 // update candidate details (admin only)
+// update candidate details (admin only)
 router.put('/:candidateID', jwtAuthMiddleware, async (req, res) => {
   try {
     if (!(await checkAdminRole(req.user.id)))
       return res.status(403).json({ message: 'user does not have admin role' });
     const candidateId = req.params.candidateID;
-    const updateCandidateData = req.body;
-       
-        if (typeof req.body.name === 'string') {
+
+    const allowed = {};   // ✅ FIX 1: this line was missing
+
+    if (typeof req.body.name === 'string') {
       if (!req.body.name.trim()) return res.status(400).json({ error: 'Name cannot be empty' });
       allowed.name = req.body.name.trim();
     }
@@ -65,19 +67,22 @@ router.put('/:candidateID', jwtAuthMiddleware, async (req, res) => {
       }
       allowed.age = Number(req.body.age);
     }
-
-     if (req.body.partyLogo !== undefined && !isValidLogo(req.body.partyLogo)) {
-      return res.status(400).json({ error: 'Party logo must be a PNG, JPG or WEBP image under 200 KB' });
+    if (req.body.partyLogo !== undefined) {
+      if (!isValidLogo(req.body.partyLogo)) {
+        return res.status(400).json({ error: 'Party logo must be a PNG, JPG or WEBP image under 200 KB' });
+      }
+      allowed.partyLogo = req.body.partyLogo;   // ✅ FIX 2: this line was missing
     }
 
-    const response = await Candidate.findByIdAndUpdate(candidateId, updateCandidateData, {
+    // ✅ FIX 3: pass 'allowed' instead of the raw req.body
+    const response = await Candidate.findByIdAndUpdate(candidateId, allowed, {
       new: true,
       runValidators: true,
     });
     if (!response) return res.status(404).json({ error: 'Candidate not found' });
     res.status(200).json(response);
   } catch (err) {
-        if (err.name === 'CastError') return res.status(400).json({ error: 'Invalid candidate id' });
+    if (err.name === 'CastError') return res.status(400).json({ error: 'Invalid candidate id' });
     console.log(err);
     res.status(500).json({ error: 'Internal Server Error' });
   }
