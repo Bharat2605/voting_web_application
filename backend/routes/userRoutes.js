@@ -31,7 +31,7 @@ router.post('/signup', async (req ,res) => {
 }
 );
 
-router.post('/login',async (req,res) => {
+router.post('/login',jwtAuthMiddleware ,async (req,res) => {
       try{
           const {aadharCardNumber,password} = req.body;
 
