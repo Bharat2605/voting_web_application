@@ -63,7 +63,7 @@ export default function Results() {
             return (
               <li key={`${r.party}-${i}`}>
                 <div className="flex items-baseline justify-between mb-1.5">
-                                   <span className="text-ink font-medium flex items-center gap-3">
+                    <span className="text-ink font-medium flex items-center gap-3">
                     <PartyLogo src={r.partyLogo} party={r.party} size={28} />
                     {r.name ? `${r.name} · ${r.party}` : r.party}
                   </span>

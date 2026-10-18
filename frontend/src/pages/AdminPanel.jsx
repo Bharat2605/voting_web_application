@@ -6,16 +6,6 @@ import PartyLogo from '../components/PartyLogo.jsx';
 
 const emptyForm = { name: '', party: '', age: '', partyLogo: '' };
 
-const pad = (n) => String(n).padStart(2, '0');
-// ISO string -> value for <input type="datetime-local"> (shown in the admin's local time)
-const toLocalInput = (iso) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-const formatTime = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-
-
 
 // Shrinks the chosen image to a 160x160 PNG so it stays small (well under 200 KB).
 const resizeLogo = (file) =>
@@ -64,26 +54,16 @@ export default function AdminPanel() {
   const [saving, setSaving] = useState(false);
   const [editFileKey, setEditFileKey] = useState(0);
 
-    // Voting time limit
-  const [windowForm, setWindowForm] = useState({ start: '', end: '' });
-  const [windowInfo, setWindowInfo] = useState(null);
-  const [savingWindow, setSavingWindow] = useState(false);
-
-
   const load = async () => {
     setLoading(true);
     try {
-           const [listRes, countRes, windowRes] = await Promise.all([
+        const [listRes, countRes, windowRes] = await Promise.all([
         api.get('/candidate'),
         api.get('/candidate/vote/count'),
-        api.get('/candidate/voting-window'),
+    
       ]);
       setCandidates(listRes.data);
-      setWindowInfo(windowRes.data);
-      setWindowForm({
-        start: toLocalInput(windowRes.data.startTime),
-        end: toLocalInput(windowRes.data.endTime),
-      });
+      
       const map = {};
       countRes.data.forEach((r) => {
         map[`${r.name}__${r.party}`] = r.count;
@@ -195,46 +175,6 @@ export default function AdminPanel() {
     }
   };
 
-
-    const handleSaveWindow = async (e) => {
-    e.preventDefault();
-    setError('');
-    setNotice('');
-    if (!windowForm.start || !windowForm.end) {
-      setError('Please choose both start time and end time.');
-      return;
-    }
-    setSavingWindow(true);
-    try {
-      const { data } = await api.put('/candidate/voting-window', {
-        startTime: new Date(windowForm.start).toISOString(),
-        endTime: new Date(windowForm.end).toISOString(),
-      });
-      setWindowInfo(data);
-      setNotice('Voting time saved.');
-    } catch (err) {
-      setError(err?.response?.data?.message || err?.response?.data?.error || 'Could not save voting time.');
-    } finally {
-      setSavingWindow(false);
-    }
-  };
-
-  const handleClearWindow = async () => {
-    setError('');
-    setNotice('');
-    setSavingWindow(true);
-    try {
-      const { data } = await api.put('/candidate/voting-window', { startTime: null, endTime: null });
-      setWindowInfo(data);
-      setWindowForm({ start: '', end: '' });
-      setNotice('Voting time limit removed. Voting is open all the time.');
-    } catch (err) {
-      setError(err?.response?.data?.message || err?.response?.data?.error || 'Could not remove voting time.');
-    } finally {
-      setSavingWindow(false);
-    }
-  };
-
   const handleDelete = async (id) => {
     setError('');
     setNotice('');
@@ -259,50 +199,7 @@ export default function AdminPanel() {
       <p className="text-ink/50 text-sm mb-10">
         Add, remove, and keep track of every candidate on the ballot. Admins cannot vote.
       </p>
-
-            <form onSubmit={handleSaveWindow} className="border border-line px-6 py-6 mb-4 space-y-5">
-        <h2 className="font-serif text-xl">Voting time</h2>
-        <div className="grid sm:grid-cols-2 gap-5">
-          <div>
-            <label className="field-label" htmlFor="startTime">Voting starts</label>
-            <input
-              id="startTime"
-              type="datetime-local"
-              value={windowForm.start}
-              onChange={(e) => setWindowForm({ ...windowForm, start: e.target.value })}
-              className="field-input"
-            />
-          </div>
-          <div>
-            <label className="field-label" htmlFor="endTime">Voting ends</label>
-            <input
-              id="endTime"
-              type="datetime-local"
-              value={windowForm.end}
-              onChange={(e) => setWindowForm({ ...windowForm, end: e.target.value })}
-              className="field-input"
-            />
-          </div>
-        </div>
-        <p className="text-sm text-ink/50">
-          {windowInfo?.status === 'always' && 'No time limit set. Voting is open all the time.'}
-          {windowInfo?.status === 'upcoming' && `Voting opens on ${formatTime(windowInfo.startTime)}.`}
-          {windowInfo?.status === 'open' && `Voting is open now and closes on ${formatTime(windowInfo.endTime)}.`}
-          {windowInfo?.status === 'closed' && `Voting closed on ${formatTime(windowInfo.endTime)}.`}
-        </p>
-        <div className="flex items-center gap-4">
-          <button type="submit" disabled={savingWindow} className="btn-primary">
-            {savingWindow ? 'Saving…' : 'Save voting time'}
-          </button>
-          {windowInfo?.status !== 'always' && (
-            <button type="button" onClick={handleClearWindow} disabled={savingWindow} className="text-sm text-ink/50 hover:text-ballot">
-              Remove time limit
-            </button>
-          )}
-        </div>
-      </form>
       
-
       <form onSubmit={handleAdd} className="border border-line px-6 py-6 mb-4 space-y-5">
         <h2 className="font-serif text-xl">Add a candidate</h2>
         <div className="grid sm:grid-cols-3 gap-5">

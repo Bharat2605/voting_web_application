@@ -3,7 +3,7 @@ const router = express.Router();
 const Candidate = require('./../models/candidate');
 const { jwtAuthMiddleware } = require('./../jwt');
 const User = require('../models/user');
-const VotingWindow = require('../models/votingWindow');
+
 
 // Party logo must be a small PNG/JPEG/WEBP data URL (empty string = no logo).
 const MAX_LOGO_LENGTH = 300000; // characters, roughly 220 KB of image
@@ -21,73 +21,6 @@ const checkAdminRole = async (userId) => {
     return false;
   }
 };
-
-
-// ---- Voting time window --------------------------------------------------
-// status: 'always' (no limit set) | 'upcoming' | 'open' | 'closed'
-const getWindow = () => VotingWindow.findOne({ key: 'main' }).lean();
-
-const windowStatus = (w, now = Date.now()) => {
-  if (!w?.startTime || !w?.endTime) return 'always';
-  if (now < new Date(w.startTime).getTime()) return 'upcoming';
-  if (now >= new Date(w.endTime).getTime()) return 'closed';
-  return 'open';
-};
-
-const windowPayload = (w) => ({
-  startTime: w?.startTime || null,
-  endTime: w?.endTime || null,
-  status: windowStatus(w),
-  serverTime: new Date().toISOString(), // lets the browser correct its own clock
-});
-
-// Everyone (logged in + face verified) can read the window.
-router.get('/voting-window', jwtAuthMiddleware , async (req, res) => {
-  try {
-    res.status(200).json(windowPayload(await getWindow()));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
-// Admin sets { startTime, endTime } (ISO strings), or sends both as null to remove the limit.
-router.put('/voting-window',  jwtAuthMiddleware ,async (req, res) => {
-  try {
-    if (!(await checkAdminRole(req.user.id))) return res.status(403).json({ message: 'Admin role required' });
-
-    const { startTime, endTime } = req.body;
-    let update;
-
-    if (startTime === null && endTime === null) {
-      update = { startTime: null, endTime: null };
-    } else {
-      const start = new Date(startTime);
-      const end = new Date(endTime);
-      if (!startTime || !endTime || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        return res.status(400).json({ error: 'Valid start time and end time are required' });
-      }
-      if (end <= start) {
-        return res.status(400).json({ error: 'End time must be after start time' });
-      }
-      if (end.getTime() <= Date.now()) {
-        return res.status(400).json({ error: 'End time must be in the future' });
-      }
-      update = { startTime: start, endTime: end };
-    }
-
-    const saved = await VotingWindow.findOneAndUpdate(
-      { key: 'main' },
-      { $set: update },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    ).lean();
-
-    res.status(200).json(windowPayload(saved));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
 
 // add a candidate (admin only)
 router.post('/', jwtAuthMiddleware, async (req, res) => {
@@ -190,15 +123,6 @@ router.post('/vote/:candidateID', jwtAuthMiddleware , async (req, res) => {
   const candidateID = req.params.candidateID;
 
   try {
-
-        // Time limit check - BEFORE the vote is reserved, so a blocked attempt never uses up the voter's single vote.
-    const status = windowStatus(await getWindow());
-    if (status === 'upcoming') {
-      return res.status(403).json({ code: 'VOTING_NOT_STARTED', message: 'Voting has not started yet.' });
-    }
-    if (status === 'closed') {
-      return res.status(403).json({ code: 'VOTING_CLOSED', message: 'Voting has ended.' });
-    }
     const user = await User.findOneAndUpdate(
       { _id: userId, role: 'voter', isVoted: false },
       { $set: { isVoted: true } },
