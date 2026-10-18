@@ -8,6 +8,7 @@ import Results from './pages/Results.jsx';
 import Profile from './pages/Profile.jsx';
 import AdminPanel from './pages/AdminPanel.jsx';
 import NotFound from './pages/NotFound.jsx';
+import Registrations from './pages/Registrations.jsx';
 
 export default function App() {
   return (
@@ -49,6 +50,16 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+
+          <Route
+  path="/registration"
+  element={
+    <ProtectedRoute adminOnly>
+      <Registrations />
+    </ProtectedRoute>
+  }
+/>
+
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

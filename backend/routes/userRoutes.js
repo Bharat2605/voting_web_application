@@ -104,5 +104,31 @@ router.put('/profile/password',jwtAuthMiddleware,async (req,res) => {
 }
 )
 
+// Admin dashboard: list of registered voters (name + Aadhar number only).
+router.get('/registration', jwtAuthMiddleware,  async (req, res) => {
+  try {
+    const admin = await User.findById(req.user.id).select('role');
+    if (admin?.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin role required' });
+    }
+
+    const users = await User.find({ role: 'voter' })
+      .select('name aadharCardNumber')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.status(200).json({
+      total: users.length,
+      registrations: users.map((u) => ({
+        id: u._id,
+        name: u.name,
+        aadharCardNumber: u.aadharCardNumber,
+      })),
+    });
+  } catch (err) {
+    console.error('Registration list error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 module.exports = router;

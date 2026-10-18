@@ -2,6 +2,17 @@ import { useEffect, useState } from 'react';
 import api from '../api/axios.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import Loader from '../components/Loader.jsx';
+import PartyLogo from '../components/PartyLogo.jsx';
+
+const fmtTime = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+
+const fmtLeft = (ms) => {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return `${d ? `${d}d ` : ''}${h}h ${m}m ${s % 60}s`;
+};
 
 export default function Dashboard() {
   const { user, refreshProfile } = useAuth();
@@ -12,14 +23,27 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [justVoted, setJustVoted] = useState(false);
 
+    // Voting time limit (server time is the source of truth)
+  const [win, setWin] = useState(null);
+  const [offset, setOffset] = useState(0); // server clock minus this device's clock
+  const [now, setNow] = useState(Date.now());
+
+
   const alreadyVoted = Boolean(user?.isVoted) || justVoted;
   const isAdmin = user?.role === 'admin';
 
   const loadCandidates = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/candidate');
+           const [{ data }, winRes] = await Promise.all([
+        api.get('/candidate'),
+        api.get('/candidate/voting-window').catch(() => null),
+      ]);
       setCandidates(data);
+      if (winRes) {
+        setWin(winRes.data);
+        setOffset(new Date(winRes.data.serverTime).getTime() - Date.now());
+      }
     } catch (err) {
       setError('Could not load candidates. Is the backend server running?');
     } finally {
@@ -30,6 +54,23 @@ export default function Dashboard() {
   useEffect(() => {
     loadCandidates();
   }, []);
+
+    // Tick every second so the countdown and open/closed state update live.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const serverNow = now + offset;
+  const startMs = win?.startTime ? new Date(win.startTime).getTime() : null;
+  const endMs = win?.endTime ? new Date(win.endTime).getTime() : null;
+  let votingStatus = 'always';
+  if (startMs && endMs) {
+    if (serverNow < startMs) votingStatus = 'upcoming';
+    else if (serverNow >= endMs) votingStatus = 'closed';
+    else votingStatus = 'open';
+  }
+  const votingOpen = votingStatus === 'always' || votingStatus === 'open';
 
   const castVote = async () => {
     if (!selected) return;
@@ -62,6 +103,35 @@ export default function Dashboard() {
           : 'Select one candidate below, then cast your vote. You can only vote once.'}
       </p>
 
+
+      {votingStatus !== 'always' && (
+        <div className="mb-8 border border-line px-6 py-4 text-sm">
+          {votingStatus === 'upcoming' && (
+            <>
+              <p className="text-ink font-medium">Voting has not started yet</p>
+              <p className="text-ink/55">
+                Opens on {fmtTime(win.startTime)} (in {fmtLeft(startMs - serverNow)})
+              </p>
+            </>
+          )}
+          {votingStatus === 'open' && (
+            <>
+              <p className="text-ink font-medium">Voting is open</p>
+              <p className="text-ink/55">
+                Closes on {fmtTime(win.endTime)} ({fmtLeft(endMs - serverNow)} left)
+              </p>
+            </>
+          )}
+          {votingStatus === 'closed' && (
+            <>
+              <p className="text-ink font-medium">Voting has ended</p>
+              <p className="text-ink/55">Closed on {fmtTime(win.endTime)}. Check the Results page.</p>
+            </>
+          )}
+        </div>
+      )}
+
+
       {justVoted && (
         <div className="mb-10 border border-ballot/30 bg-ballot/5 px-6 py-5 flex items-center gap-4">
           <div className="w-11 h-11 shrink-0 rounded-full border-2 border-ballot flex items-center justify-center animate-stamp">
@@ -86,7 +156,7 @@ export default function Dashboard() {
         <ul className="border border-line divide-y divide-line">
           {candidates.map((c, i) => {
             const isSelected = selected === c._id;
-            const disabled = isAdmin || alreadyVoted;
+            const disabled = isAdmin || alreadyVoted || !votingOpen;
             return (
               <li key={c._id}>
                 <button
@@ -107,6 +177,7 @@ export default function Dashboard() {
                   >
                     {isSelected && <span className="w-2.5 h-2.5 rounded-full bg-ballot" />}
                   </span>
+                                    <PartyLogo src={c.partyLogo} party={c.party} />
                   <span className="flex-1">
                     <span className="block text-ink font-medium">{c.name}</span>
                     <span className="block text-ink/45 text-sm">{c.party}</span>
@@ -121,7 +192,7 @@ export default function Dashboard() {
       {!isAdmin && !alreadyVoted && candidates.length > 0 && (
         <button
           onClick={castVote}
-          disabled={!selected || voting}
+          disabled={!selected || voting || !votingOpen}
           className="btn-primary w-full mt-8"
         >
           {voting ? 'Casting your vote…' : 'Cast your vote'}

@@ -11,7 +11,7 @@ const cors = require('cors');
 app.use(cors({
   origin: process.env.FRONTEND_URL || '*',
 }));
-app.use(bodyParser.json());
+bodyParser.json({ limit: '500kb' })
 
 const PORT = process.env.PORT || 3000;
 

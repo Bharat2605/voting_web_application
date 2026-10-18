@@ -15,6 +15,11 @@ const candidateSchema = new mongoose.Schema({
         type : Number,
         required : true
     },
+        // Small party logo stored as a data URL (resized in the browser).
+    partyLogo : {
+        type : String,
+        default : ''
+    },
     votes : [{
        user : {
         type : mongoose.Schema.Types.ObjectId,

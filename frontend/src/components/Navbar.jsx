@@ -39,9 +39,12 @@ export default function Navbar() {
             <NavLink to="/" end className={linkClass}>Candidates</NavLink>
             <NavLink to="/results" className={linkClass}>Results</NavLink>
             <NavLink to="/profile" className={linkClass}>Profile</NavLink>
-            {user.role === 'admin' && (
-              <NavLink to="/admin" className={linkClass}>Admin</NavLink>
-            )}
+           {user.role === 'admin' && (
+  <>
+    <NavLink to="/admin" className={linkClass}>Admin</NavLink>
+    <NavLink to="/registration" className={linkClass}>Registrations</NavLink>
+  </>
+)}
           </nav>
         )}
 
@@ -84,8 +87,11 @@ export default function Navbar() {
           <NavLink to="/results" className={mobileLinkClass} onClick={closeMenu}>Results</NavLink>
           <NavLink to="/profile" className={mobileLinkClass} onClick={closeMenu}>Profile</NavLink>
           {user.role === 'admin' && (
-            <NavLink to="/admin" className={mobileLinkClass} onClick={closeMenu}>Admin</NavLink>
-          )}
+  <>
+    <NavLink to="/admin" className={mobileLinkClass} onClick={closeMenu}>Admin</NavLink>
+    <NavLink to="/registration" className={mobileLinkClass} onClick={closeMenu}>Registrations</NavLink>
+  </>
+)}
           <button
             onClick={handleLogout}
             className="w-full text-left px-6 py-3.5 text-base text-ballot border-t border-line"

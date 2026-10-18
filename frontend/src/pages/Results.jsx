@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import api from '../api/axios.js';
 import Loader from '../components/Loader.jsx';
+import PartyLogo from '../components/PartyLogo.jsx';
 
 export default function Results() {
   const [results, setResults] = useState([]);
@@ -62,7 +63,8 @@ export default function Results() {
             return (
               <li key={`${r.party}-${i}`}>
                 <div className="flex items-baseline justify-between mb-1.5">
-                  <span className="text-ink font-medium">
+                                   <span className="text-ink font-medium flex items-center gap-3">
+                    <PartyLogo src={r.partyLogo} party={r.party} size={28} />
                     {r.name ? `${r.name} · ${r.party}` : r.party}
                   </span>
                   <span className="text-sm text-ink/50 tabular-nums">

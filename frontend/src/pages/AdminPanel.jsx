@@ -2,7 +2,50 @@ import { useEffect, useState } from 'react';
 import api from '../api/axios.js';
 import Loader from '../components/Loader.jsx';
 
-const emptyForm = { name: '', party: '', age: '' };
+import PartyLogo from '../components/PartyLogo.jsx';
+
+const emptyForm = { name: '', party: '', age: '', partyLogo: '' };
+
+const pad = (n) => String(n).padStart(2, '0');
+// ISO string -> value for <input type="datetime-local"> (shown in the admin's local time)
+const toLocalInput = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const formatTime = (iso) => new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+
+
+
+// Shrinks the chosen image to a 160x160 PNG so it stays small (well under 200 KB).
+const resizeLogo = (file) =>
+  new Promise((resolve, reject) => {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      return reject(new Error('Logo must be a PNG, JPG or WEBP image.'));
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      return reject(new Error('Image is too large (max 5 MB).'));
+    }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const size = 160;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const scale = Math.min(size / img.width, size / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      canvas.getContext('2d').drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('Could not read this image.'));
+    };
+    img.src = url;
+  });
 
 export default function AdminPanel() {
   const [candidates, setCandidates] = useState([]);
@@ -13,15 +56,34 @@ export default function AdminPanel() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [deletingId, setDeletingId] = useState(null);
+    const [fileKey, setFileKey] = useState(0); // resets the file input after submit
+
+      // Editing an existing candidate
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [editFileKey, setEditFileKey] = useState(0);
+
+    // Voting time limit
+  const [windowForm, setWindowForm] = useState({ start: '', end: '' });
+  const [windowInfo, setWindowInfo] = useState(null);
+  const [savingWindow, setSavingWindow] = useState(false);
+
 
   const load = async () => {
     setLoading(true);
     try {
-      const [listRes, countRes] = await Promise.all([
+           const [listRes, countRes, windowRes] = await Promise.all([
         api.get('/candidate'),
         api.get('/candidate/vote/count'),
+        api.get('/candidate/voting-window'),
       ]);
       setCandidates(listRes.data);
+      setWindowInfo(windowRes.data);
+      setWindowForm({
+        start: toLocalInput(windowRes.data.startTime),
+        end: toLocalInput(windowRes.data.endTime),
+      });
       const map = {};
       countRes.data.forEach((r) => {
         map[`${r.name}__${r.party}`] = r.count;
@@ -40,6 +102,24 @@ export default function AdminPanel() {
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
+    const handleLogoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError('');
+    try {
+      const logo = await resizeLogo(file);
+      setForm((f) => ({ ...f, partyLogo: logo }));
+    } catch (err) {
+      setError(err.message);
+      e.target.value = '';
+    }
+  };
+
+  const removeLogo = () => {
+    setForm((f) => ({ ...f, partyLogo: '' }));
+    setFileKey((k) => k + 1);
+  };
+
   const handleAdd = async (e) => {
     e.preventDefault();
     setError('');
@@ -48,12 +128,110 @@ export default function AdminPanel() {
     try {
       await api.post('/candidate', { ...form, age: Number(form.age) });
       setForm(emptyForm);
+            setFileKey((k) => k + 1);
       setNotice('Candidate added.');
       load();
     } catch (err) {
       setError(err?.response?.data?.message || err?.response?.data?.error || 'Could not add candidate.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+    const startEdit = (c) => {
+    setError('');
+    setNotice('');
+    setEditingId(c._id);
+    setEditForm({
+      name: c.name,
+      party: c.party,
+      age: String(c.age ?? ''),
+      partyLogo: c.partyLogo || '',
+    });
+    setEditFileKey((k) => k + 1);
+  };
+
+  const cancelEdit = () => setEditingId(null);
+
+  const handleEditChange = (e) => setEditForm({ ...editForm, [e.target.name]: e.target.value });
+
+  const handleEditLogoChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError('');
+    try {
+      const logo = await resizeLogo(file);
+      setEditForm((f) => ({ ...f, partyLogo: logo }));
+    } catch (err) {
+      setError(err.message);
+      e.target.value = '';
+    }
+  };
+
+  const removeEditLogo = () => {
+    setEditForm((f) => ({ ...f, partyLogo: '' }));
+    setEditFileKey((k) => k + 1);
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setError('');
+    setNotice('');
+    setSaving(true);
+    try {
+      await api.put(`/candidate/${editingId}`, {
+        name: editForm.name,
+        party: editForm.party,
+        age: Number(editForm.age),
+        partyLogo: editForm.partyLogo,
+      });
+      setEditingId(null);
+      setNotice('Candidate updated.');
+      load();
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.response?.data?.error || 'Could not update candidate.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+
+    const handleSaveWindow = async (e) => {
+    e.preventDefault();
+    setError('');
+    setNotice('');
+    if (!windowForm.start || !windowForm.end) {
+      setError('Please choose both start time and end time.');
+      return;
+    }
+    setSavingWindow(true);
+    try {
+      const { data } = await api.put('/candidate/voting-window', {
+        startTime: new Date(windowForm.start).toISOString(),
+        endTime: new Date(windowForm.end).toISOString(),
+      });
+      setWindowInfo(data);
+      setNotice('Voting time saved.');
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.response?.data?.error || 'Could not save voting time.');
+    } finally {
+      setSavingWindow(false);
+    }
+  };
+
+  const handleClearWindow = async () => {
+    setError('');
+    setNotice('');
+    setSavingWindow(true);
+    try {
+      const { data } = await api.put('/candidate/voting-window', { startTime: null, endTime: null });
+      setWindowInfo(data);
+      setWindowForm({ start: '', end: '' });
+      setNotice('Voting time limit removed. Voting is open all the time.');
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.response?.data?.error || 'Could not remove voting time.');
+    } finally {
+      setSavingWindow(false);
     }
   };
 
@@ -82,6 +260,49 @@ export default function AdminPanel() {
         Add, remove, and keep track of every candidate on the ballot. Admins cannot vote.
       </p>
 
+            <form onSubmit={handleSaveWindow} className="border border-line px-6 py-6 mb-4 space-y-5">
+        <h2 className="font-serif text-xl">Voting time</h2>
+        <div className="grid sm:grid-cols-2 gap-5">
+          <div>
+            <label className="field-label" htmlFor="startTime">Voting starts</label>
+            <input
+              id="startTime"
+              type="datetime-local"
+              value={windowForm.start}
+              onChange={(e) => setWindowForm({ ...windowForm, start: e.target.value })}
+              className="field-input"
+            />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="endTime">Voting ends</label>
+            <input
+              id="endTime"
+              type="datetime-local"
+              value={windowForm.end}
+              onChange={(e) => setWindowForm({ ...windowForm, end: e.target.value })}
+              className="field-input"
+            />
+          </div>
+        </div>
+        <p className="text-sm text-ink/50">
+          {windowInfo?.status === 'always' && 'No time limit set. Voting is open all the time.'}
+          {windowInfo?.status === 'upcoming' && `Voting opens on ${formatTime(windowInfo.startTime)}.`}
+          {windowInfo?.status === 'open' && `Voting is open now and closes on ${formatTime(windowInfo.endTime)}.`}
+          {windowInfo?.status === 'closed' && `Voting closed on ${formatTime(windowInfo.endTime)}.`}
+        </p>
+        <div className="flex items-center gap-4">
+          <button type="submit" disabled={savingWindow} className="btn-primary">
+            {savingWindow ? 'Saving…' : 'Save voting time'}
+          </button>
+          {windowInfo?.status !== 'always' && (
+            <button type="button" onClick={handleClearWindow} disabled={savingWindow} className="text-sm text-ink/50 hover:text-ballot">
+              Remove time limit
+            </button>
+          )}
+        </div>
+      </form>
+      
+
       <form onSubmit={handleAdd} className="border border-line px-6 py-6 mb-4 space-y-5">
         <h2 className="font-serif text-xl">Add a candidate</h2>
         <div className="grid sm:grid-cols-3 gap-5">
@@ -98,6 +319,27 @@ export default function AdminPanel() {
             <input id="age" name="age" type="number" required value={form.age} onChange={handleChange} className="field-input" />
           </div>
         </div>
+
+                <div>
+          <label className="field-label" htmlFor="partyLogo">Party logo (optional)</label>
+          <div className="flex items-center gap-4">
+            <PartyLogo src={form.partyLogo} party={form.party} size={56} />
+            <input
+              key={fileKey}
+              id="partyLogo"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={handleLogoChange}
+              className="text-sm text-ink/60"
+            />
+            {form.partyLogo && (
+              <button type="button" onClick={removeLogo} className="text-sm text-ink/50 hover:text-ballot">
+                Remove logo
+              </button>
+            )}
+          </div>
+        </div>
+
         <button type="submit" disabled={submitting} className="btn-primary">
           {submitting ? 'Adding…' : 'Add candidate'}
         </button>
@@ -115,24 +357,77 @@ export default function AdminPanel() {
         </p>
       ) : (
         <ul className="border border-line divide-y divide-line">
-          {candidates.map((c) => (
-            <li key={c._id} className="flex items-center justify-between px-6 py-4">
-              <div>
-                <p className="text-ink font-medium">{c.name}</p>
-                <p className="text-ink/45 text-sm">
-                  {c.party} &middot; {counts[`${c.name}__${c.party}`] ?? 0} vote
-                  {counts[`${c.name}__${c.party}`] === 1 ? '' : 's'}
-                </p>
-              </div>
-              <button
-                onClick={() => handleDelete(c._id)}
-                disabled={deletingId === c._id}
-                className="text-sm text-ink/50 hover:text-ballot transition-colors"
-              >
-                {deletingId === c._id ? 'Removing…' : 'Remove'}
-              </button>
-            </li>
-          ))}
+                    {candidates.map((c) =>
+            editingId === c._id ? (
+              <li key={c._id} className="px-6 py-5">
+                <form onSubmit={handleSave} className="space-y-4">
+                  <div className="grid sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="field-label" htmlFor="edit-name">Name</label>
+                      <input id="edit-name" name="name" required value={editForm.name} onChange={handleEditChange} className="field-input" />
+                    </div>
+                    <div>
+                      <label className="field-label" htmlFor="edit-party">Party</label>
+                      <input id="edit-party" name="party" required value={editForm.party} onChange={handleEditChange} className="field-input" />
+                    </div>
+                    <div>
+                      <label className="field-label" htmlFor="edit-age">Age</label>
+                      <input id="edit-age" name="age" type="number" required value={editForm.age} onChange={handleEditChange} className="field-input" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <PartyLogo src={editForm.partyLogo} party={editForm.party} size={48} />
+                    <input
+                      key={editFileKey}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={handleEditLogoChange}
+                      className="text-sm text-ink/60"
+                    />
+                    {editForm.partyLogo && (
+                      <button type="button" onClick={removeEditLogo} className="text-sm text-ink/50 hover:text-ballot">
+                        Remove logo
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <button type="submit" disabled={saving} className="btn-primary">
+                      {saving ? 'Saving…' : 'Save changes'}
+                    </button>
+                    <button type="button" onClick={cancelEdit} className="text-sm text-ink/50 hover:text-ink">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </li>
+            ) : (
+              <li key={c._id} className="flex items-center justify-between px-6 py-4">
+                <PartyLogo src={c.partyLogo} party={c.party} />
+                <div className="flex-1 ml-4">
+                  <p className="text-ink font-medium">{c.name}</p>
+                  <p className="text-ink/45 text-sm">
+                    {c.party} &middot; {counts[`${c.name}__${c.party}`] ?? 0} vote
+                    {counts[`${c.name}__${c.party}`] === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => startEdit(c)}
+                    className="text-sm text-ink/50 hover:text-ink transition-colors"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(c._id)}
+                    disabled={deletingId === c._id}
+                    className="text-sm text-ink/50 hover:text-ballot transition-colors"
+                  >
+                    {deletingId === c._id ? 'Removing…' : 'Remove'}
+                  </button>
+                </div>
+              </li>
+            )
+          )}
         </ul>
       )}
     </div>
