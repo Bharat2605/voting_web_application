@@ -38,7 +38,7 @@ export default function Dashboard() {
     setVoting(true);
     setError('');
     try {
-      await api.get(`/candidate/vote/${selected}`);
+      await api.post(`/candidate/vote/${selected}`);
       setJustVoted(true);
       await refreshProfile();
     } catch (err) {
