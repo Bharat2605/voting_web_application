@@ -3,6 +3,7 @@ const router = express.Router();
 const Candidate = require('./../models/candidate');
 const { jwtAuthMiddleware } = require('./../jwt');
 const User = require('../models/user');
+const Settings = require('../models/settings');
 
 
 // Party logo must be a small PNG/JPEG/WEBP data URL (empty string = no logo).
@@ -21,6 +22,54 @@ const checkAdminRole = async (userId) => {
     return false;
   }
 };
+
+
+// ---------- VOTING DATE & TIME (set by admin) ----------
+const getVotingTime = async () =>
+  (await Settings.findOne({ key: 'voting' })) ||
+  (await Settings.create({ key: 'voting' }));
+
+const toISTInput = (d) =>
+  d ? d.toLocaleString('sv-SE', { timeZone: 'Asia/Kolkata' }).slice(0, 16).replace(' ', 'T') : '';
+
+const toISTText = (d) =>
+  d ? d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) : '';
+
+const isVotingOpen = async () => {
+  const { start, end } = await getVotingTime();
+  const now = new Date();
+  return { open: !!(start && end && now >= start && now < end), start, end };
+};
+
+router.get('/voting-time', jwtAuthMiddleware, async (req, res) => {
+  try {
+    const { start, end } = await getVotingTime();
+    res.json({ start: toISTInput(start), end: toISTInput(end) });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+router.put('/voting-time', jwtAuthMiddleware, async (req, res) => {
+  try {
+    if (!(await checkAdminRole(req.user.id)))
+      return res.status(403).json({ message: 'user does not have admin role' });
+
+    const start = new Date(`${req.body.start}:00+05:30`);
+    const end   = new Date(`${req.body.end}:00+05:30`);
+    if (isNaN(start) || isNaN(end) || start >= end)
+      return res.status(400).json({ error: 'Enter valid start and end date-time; start must be before end' });
+
+    const s = await Settings.findOneAndUpdate(
+      { key: 'voting' }, { start, end }, { new: true, upsert: true }
+    );
+    res.json({ start: toISTInput(s.start), end: toISTInput(s.end) });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
 
 // add a candidate (admin only)
 router.post('/', jwtAuthMiddleware, async (req, res) => {
@@ -96,7 +145,14 @@ router.delete('/:candidateID', jwtAuthMiddleware, async (req, res) => {
     const candidateId = req.params.candidateID;
     const response = await Candidate.findByIdAndDelete(candidateId);
     if (!response) return res.status(404).json({ error: 'Candidate not found' });
-    res.status(200).json(response);
+
+   // if no candidates are left, start a fresh election: let everyone vote again
+    const remaining = await Candidate.countDocuments();
+    if (remaining === 0) {
+    await User.updateMany({}, { $set: { isVoted: false } });
+}
+
+res.status(200).json(response); 
   } catch (err) {
     console.log(err);
     res.status(500).json({ error: 'Internal Server Error' });
@@ -124,6 +180,15 @@ router.get('/vote/count', async (req, res) => {
 // The user update is conditional on isVoted=false, which prevents concurrent
 // requests from successfully casting two votes for the same account.
 router.post('/vote/:candidateID', jwtAuthMiddleware , async (req, res) => {
+  const { open, start, end } = await isVotingOpen();
+  if (!open) {
+    return res.status(403).json({
+      message: start && end
+        ? `Voting is open only from ${toISTText(start)} to ${toISTText(end)} (IST)`
+        : 'Voting time has not been set by admin yet'
+    });
+  }
+
   const userId = req.user.id;
   const candidateID = req.params.candidateID;
 

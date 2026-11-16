@@ -54,15 +54,19 @@ export default function AdminPanel() {
   const [saving, setSaving] = useState(false);
   const [editFileKey, setEditFileKey] = useState(0);
 
+  const [vt, setVt] = useState({ start: '', end: '' });
+  const [vtMsg, setVtMsg] = useState('');
+
   const load = async () => {
     setLoading(true);
     try {
-        const [listRes, countRes, windowRes] = await Promise.all([
+             const [listRes, countRes, windowRes] = await Promise.all([
         api.get('/candidate'),
         api.get('/candidate/vote/count'),
-    
+        api.get('/candidate/voting-time'),
       ]);
       setCandidates(listRes.data);
+      setVt(windowRes.data);
       
       const map = {};
       countRes.data.forEach((r) => {
@@ -79,6 +83,17 @@ export default function AdminPanel() {
   useEffect(() => {
     load();
   }, []);
+
+
+    const saveVotingTime = async () => {
+    setVtMsg('');
+    try {
+      await api.put('/candidate/voting-time', vt);
+      setVtMsg('Voting date & time saved.');
+    } catch (err) {
+      setVtMsg(err?.response?.data?.error || err?.response?.data?.message || 'Could not save.');
+    }
+  };
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -199,6 +214,24 @@ export default function AdminPanel() {
       <p className="text-ink/50 text-sm mb-10">
         Add, remove, and keep track of every candidate on the ballot. Admins cannot vote.
       </p>
+
+            <div className="border border-line px-6 py-6 mb-4 space-y-4">
+        <h2 className="font-serif text-xl">Voting date &amp; time (IST)</h2>
+        <div className="grid sm:grid-cols-2 gap-5">
+          <div>
+            <label className="field-label" htmlFor="vt-start">Start</label>
+            <input id="vt-start" type="datetime-local" value={vt.start}
+              onChange={(e) => setVt({ ...vt, start: e.target.value })} className="field-input" />
+          </div>
+          <div>
+            <label className="field-label" htmlFor="vt-end">End</label>
+            <input id="vt-end" type="datetime-local" value={vt.end}
+              onChange={(e) => setVt({ ...vt, end: e.target.value })} className="field-input" />
+          </div>
+        </div>
+        <button type="button" onClick={saveVotingTime} className="btn-primary">Save voting time</button>
+        {vtMsg && <p className="text-sm text-ink/70">{vtMsg}</p>}
+      </div>
       
       <form onSubmit={handleAdd} className="border border-line px-6 py-6 mb-4 space-y-5">
         <h2 className="font-serif text-xl">Add a candidate</h2>
