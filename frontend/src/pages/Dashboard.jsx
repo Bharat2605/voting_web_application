@@ -13,6 +13,8 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [justVoted, setJustVoted] = useState(false);
 
+    const [vt, setVt] = useState({ start: '', end: '' });
+
 
   const alreadyVoted = Boolean(user?.isVoted) || justVoted;
   const isAdmin = user?.role === 'admin';
@@ -32,6 +34,18 @@ export default function Dashboard() {
   useEffect(() => {
     loadCandidates();
   }, []);
+
+
+    useEffect(() => {
+    api.get('/candidate/voting-time').then((r) => setVt(r.data)).catch(() => {});
+  }, []);
+
+  const fmt = (s) =>
+    s ? new Date(s).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  const startD = vt.start ? new Date(`${vt.start}:00+05:30`) : null;
+  const endD = vt.end ? new Date(`${vt.end}:00+05:30`) : null;
+  const now = new Date();
+  const votingOpen = Boolean(startD && endD && now >= startD && now < endD);
 
   const castVote = async () => {
     if (!selected) return;
@@ -64,6 +78,25 @@ export default function Dashboard() {
           : 'Select one candidate below, then cast your vote. You can only vote once.'}
       </p>
 
+
+           <div className="mb-8 border border-line px-6 py-4 text-sm">
+        {vt.start && vt.end ? (
+          <>
+            <p className="text-ink/70">
+              Voting time (IST): <b>{fmt(vt.start)}</b> to <b>{fmt(vt.end)}</b>
+            </p>
+            <p className={votingOpen ? 'text-green-700 mt-1' : 'text-ballot mt-1'}>
+              {votingOpen
+                ? 'Voting is open now.'
+                : startD && now < startD
+                ? 'Voting has not started yet.'
+                : 'Voting is closed.'}
+            </p>
+          </>
+        ) : (
+          <p className="text-ink/60">Voting time has not been set by admin yet.</p>
+        )}
+      </div>
 
      
       {justVoted && (
