@@ -95,6 +95,17 @@ export default function AdminPanel() {
     }
   };
 
+    const clearVotingTime = async () => {
+    setVtMsg('');
+    try {
+      await api.delete('/candidate/voting-time');
+      setVt({ start: '', end: '' });
+      setVtMsg('Voting date & time cleared.');
+    } catch (err) {
+      setVtMsg(err?.response?.data?.error || err?.response?.data?.message || 'Could not clear.');
+    }
+  };
+
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
     const handleLogoChange = async (e) => {
@@ -229,7 +240,10 @@ export default function AdminPanel() {
               onChange={(e) => setVt({ ...vt, end: e.target.value })} className="field-input" />
           </div>
         </div>
-        <button type="button" onClick={saveVotingTime} className="btn-primary">Save voting time</button>
+        <div className="flex items-center gap-4">
+       <button type="button" onClick={saveVotingTime} className="btn-primary">Save voting time</button>
+       <button type="button" onClick={clearVotingTime} className="text-sm text-ink/50 hover:text-ballot">Clear</button>
+        </div>
         {vtMsg && <p className="text-sm text-ink/70">{vtMsg}</p>}
       </div>
       

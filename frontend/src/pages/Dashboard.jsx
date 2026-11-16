@@ -78,8 +78,7 @@ export default function Dashboard() {
           : 'Select one candidate below, then cast your vote. You can only vote once.'}
       </p>
 
-
-           <div className="mb-8 border border-line px-6 py-4 text-sm">
+      <div className="mb-8 border border-line px-6 py-4 text-sm">
         {vt.start && vt.end ? (
           <>
             <p className="text-ink/70">
@@ -94,7 +93,7 @@ export default function Dashboard() {
             </p>
           </>
         ) : (
-          <p className="text-ink/60">Voting time has not been set by admin yet.</p>
+          <p className="text-ballot">Voting has not started yet.</p>
         )}
       </div>
 

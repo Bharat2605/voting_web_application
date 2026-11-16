@@ -71,6 +71,23 @@ router.put('/voting-time', jwtAuthMiddleware, async (req, res) => {
   }
 });
 
+
+// ONLY ADMIN can clear the voting date & time
+   router.delete('/voting-time', jwtAuthMiddleware, async (req, res) => {
+  try {
+    if (!(await checkAdminRole(req.user.id)))
+      return res.status(403).json({ message: 'user does not have admin role' });
+
+    await Settings.findOneAndUpdate(
+      { key: 'voting' }, { start: null, end: null }, { upsert: true }
+    );
+    res.json({ start: '', end: '' });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+  });
+
 // add a candidate (admin only)
 router.post('/', jwtAuthMiddleware, async (req, res) => {
   try {
@@ -185,7 +202,7 @@ router.post('/vote/:candidateID', jwtAuthMiddleware , async (req, res) => {
     return res.status(403).json({
       message: start && end
         ? `Voting is open only from ${toISTText(start)} to ${toISTText(end)} (IST)`
-        : 'Voting time has not been set by admin yet'
+        : 'Voting has not started yet'
     });
   }
 
